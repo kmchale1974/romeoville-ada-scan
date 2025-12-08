@@ -1,0 +1,11 @@
+{
+  "name": "romeoville-ada-scan",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "crawl": "node crawl.js"
+  },
+  "dependencies": {
+    "puppeteer": "^23.0.0"
+  }
+}

@@ -1,8 +1,8 @@
-name: Nightly ADA Scan
+name: Nightly ADA Crawl + Axe Scan
 
 on:
   schedule:
-    # 6:00 AM UTC every day (adjust as needed)
+    # Every day at 6:00 AM UTC (adjust as needed)
     - cron: "0 6 * * *"
   workflow_dispatch:
 
@@ -22,14 +22,19 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install Axe CLI and browser-driver-manager
+      - name: Install dependencies (Puppeteer, Axe CLI, browser-driver-manager)
         run: |
+          npm install puppeteer
           npm install -g @axe-core/cli browser-driver-manager
 
       - name: Install Chrome & ChromeDriver (synced)
         run: |
-          # This will install matching Chrome + ChromeDriver
+          # This installs a Chrome + ChromeDriver pair that match
           browser-driver-manager install chrome
+
+      - name: Crawl romeoville.org to generate all-urls.txt
+        run: |
+          node crawl.js
 
       - name: Run Axe scans for all URLs
         run: |
@@ -37,19 +42,31 @@ jobs:
           OUTDIR="reports/$DATE"
           mkdir -p "$OUTDIR"
 
+          i=0
+          MAX_URLS=5000   # safety cap; adjust if needed
+
           while IFS= read -r url; do
             # skip empty lines
             if [ -z "$url" ]; then
               continue
             fi
 
+            i=$((i+1))
+            if [ "$i" -gt "$MAX_URLS" ]; then
+              echo "Reached MAX_URLS=$MAX_URLS, stopping."
+              break
+            fi
+
             safe=$(echo "$url" | sed 's/[^a-zA-Z0-9]/_/g')
             outfile="$OUTDIR/axe-$safe.json"
 
             echo "Scanning $url -> $outfile"
-            # -s = save JSON; -q = exit 1 on violations (we ignore failure to keep the job green)
-            axe "$url" -s "$outfile" -q || echo "Scan completed with violations for $url"
-          done < urls.txt
+
+            # -s = save JSON, -q = exit code 1 if violations
+            # We don't want the job to fail on violations, so catch non-zero exit.
+            axe "$url" -s "$outfile" -q || echo "Violations or error for $url"
+
+          done < all-urls.txt
 
       - name: Commit and push reports
         run: |
@@ -57,7 +74,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add reports/$DATE || true
+          git add "reports/$DATE" || true
           if git diff --cached --quiet; then
             echo "No new reports to commit."
           else
